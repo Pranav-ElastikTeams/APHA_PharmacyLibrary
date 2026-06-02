@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as XLSX from 'xlsx';
 import { chromium, BrowserContext, Browser, Page, ConsoleMessage } from 'playwright';
-import { USER_DATA_DIR, createStealthContext } from './open-browser';
 
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
@@ -850,9 +849,6 @@ async function main(): Promise<void> {
     // Listen for disconnect (user closes Edge)
     cdpBrowser.on('disconnected', () => { browserAlive = false; });
 
-  } else if (browserMode === 'persistent') {
-    console.log(`[Browser] Using saved session from: ${USER_DATA_DIR}`);
-    context = await createStealthContext(isHeadless);
   } else {
     browser = await chromium.launch({ headless: isHeadless });
     context = await browser.newContext({ ignoreHTTPSErrors: true });

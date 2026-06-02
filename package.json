@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "QA automation script for NAPLEX question pages on staging.pharmacylibrary.com",
   "scripts": {
-    "open-browser": "tsx src/open-browser.ts",
     "check": "tsx src/qa-check.ts"
   },
   "dependencies": {

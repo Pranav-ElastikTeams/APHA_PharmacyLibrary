@@ -46,29 +46,21 @@ Place the two Excel input files in the `data/` folder:
 
 ### Recommended: CDP mode (connect to your running Edge)
 
-1. Run `open-edge.bat` — this launches Edge with the remote debugging port open.
-2. Log in to `pharmacylibrary.com` in the Edge window that opens.
-3. In a second terminal, run the sweep:
+**Step 1 — Open the browser**
+
+Double-click `open-edge.bat` (or run it from the terminal). It launches Edge with the remote debugging port open.
+
+**Step 2 — Log in manually**
+
+In the Edge window that opens, go to `pharmacylibrary.com` and log in. Keep the window open.
+
+**Step 3 — Run the sweep**
 
 ```bash
 npm run check
 ```
 
-The script connects to Edge over CDP (`http://localhost:9222`) and opens a new tab for each question page.
-
-### Alternative: Persistent session mode
-
-Save a logged-in session once, then reuse it for all future runs:
-
-```bash
-# Step 1 — opens Edge, log in manually, then close the window
-npm run open-browser
-
-# Step 2 — runs the sweep using the saved session
-npm run check
-```
-
-Set `BROWSER_MODE=persistent` in `.env` before running.
+The script connects to that Edge window over CDP and opens a new tab for each question page.
 
 ### Alternative: Cookie injection mode
 
