@@ -10,8 +10,8 @@ dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 // Configuration
 // ---------------------------------------------------------------------------
 
-const EXCEL_DOI_PATH = path.resolve(__dirname, '..', 'data', 'NAPLEX Math Review questions_29-4-26.xlsx');
-const EXCEL_QA_PATH  = path.resolve(__dirname, '..', 'data', 'Naplex_Math-Review-Questions.xlsx');
+const EXCEL_DOI_PATH = path.resolve(__dirname, '..', 'Data', 'NAPLEX review', 'NAPLEX Math Review questions_29-4-26.xlsx');
+const EXCEL_QA_PATH  = path.resolve(__dirname, '..', 'Data', 'NAPLEX review', 'Naplex_Math-Review-Questions.xlsx');
 const CSV_PATH        = path.resolve(__dirname, '..', 'output', 'qna_qa_report.csv');
 const SCREENSHOTS_DIR = path.resolve(__dirname, '..', 'screenshots');
 
