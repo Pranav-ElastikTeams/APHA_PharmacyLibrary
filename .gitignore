@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Claude
+.claude/
+
+# Environment — contains credentials, never commit
+.env
+
+# Browser session data — contains auth cookies
+.browser-profile/
+.edge-debug-profile/
+
+# Generated output
+output/
+screenshots/
+
+# TypeScript build artifacts
+dist/
+*.js.map
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

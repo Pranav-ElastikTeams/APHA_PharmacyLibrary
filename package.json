@@ -1,0 +1,19 @@
+{
+  "name": "apha-qna-qa-check",
+  "version": "1.0.0",
+  "description": "QA automation script for NAPLEX question pages on staging.pharmacylibrary.com",
+  "scripts": {
+    "open-browser": "tsx src/open-browser.ts",
+    "check": "tsx src/qa-check.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "playwright": "^1.44.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "tsx": "^4.11.0",
+    "typescript": "^5.4.5"
+  }
+}
