@@ -9,7 +9,7 @@ node_modules/
 
 # Browser session data — contains auth cookies
 .browser-profile/
-.edge-debug-profile/
+.edge-debug-profile*/
 
 # Generated output
 output/

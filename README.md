@@ -10,7 +10,7 @@ Playwright-based QA script that sweeps NAPLEX Math Review question pages on `sta
 - Explanation block is present after reveal
 - No broken equation or other images
 - No raw MathML tags or HTML entities visible in rendered text
-- No Unicode replacement characters (`�`)
+- No Unicode replacement characters (`?`)
 - No JS console errors
 
 Screenshots are saved for every page with issues.
@@ -42,17 +42,37 @@ Place the two Excel input files in the `data/` folder:
 | `NAPLEX Math Review questions_29-4-26.xlsx` | DOI list (col A = S.No., col B = DOI) |
 | `Naplex_Math-Review-Questions.xlsx` | QA data (col C = stem, col D = expected answer) |
 
+## Key `.env` variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BROWSER_MODE` | `cdp` | `cdp` = connect to running Edge via DevTools Protocol; `launch` = launch fresh Chromium |
+| `BROWSERS` | `1` | Number of parallel browser instances. In CDP mode run `open-edge.bat <N>` first. |
+| `CDP_BASE_PORT` | `9222` | First debug port. Script connects to this port, port+1, port+2, … for each browser. |
+| `CONCURRENCY` | `20` | Total parallel worker tabs spread across all browser instances. |
+| `HEADLESS` | `true` | Set to `false` to watch the browser. |
+| `AUTH_METHOD` | `login` | `login` = fill the login form; `cookie` = inject `cf_clearance` + session cookie. |
+
 ## Usage
 
 ### Recommended: CDP mode (connect to your running Edge)
 
-**Step 1 — Open the browser**
+**Step 1 — Open browser windows**
 
-Double-click `open-edge.bat` (or run it from the terminal). It launches Edge with the remote debugging port open.
+Run `open-edge.bat` with the number of windows you want (default is 1):
 
-**Step 2 — Log in manually**
+```bat
+open-edge.bat          :: opens 1 window on port 9222
+open-edge.bat 3        :: opens 3 windows on ports 9222, 9223, 9224
+```
 
-In the Edge window that opens, go to `pharmacylibrary.com` and log in. Keep the window open.
+On first run (no profile exists yet) the script opens a single fresh window for login, then exits. Log in to `pharmacylibrary.com`, close nothing, and re-run the same command — it will clone the authenticated session to the extra profiles automatically.
+
+Set `BROWSERS` in `.env` to match the number you opened.
+
+**Step 2 — Log in manually** (first run only)
+
+In the Edge window that opens, go to `pharmacylibrary.com` and log in. Keep the window open, then re-run `open-edge.bat <N>`.
 
 **Step 3 — Run the sweep**
 
@@ -60,7 +80,7 @@ In the Edge window that opens, go to `pharmacylibrary.com` and log in. Keep the 
 npm run check
 ```
 
-The script connects to that Edge window over CDP and opens a new tab for each question page.
+The script connects to those Edge windows over CDP and opens worker tabs for each question page.
 
 ### Alternative: Cookie injection mode
 
@@ -80,6 +100,41 @@ npm run check
 ### CSV columns
 
 `doi`, `question_no`, `url`, `http_status`, `has_question_text`, `page_stem`, `reveal_button_present`, `displayed_answer`, `expected_answer`, `answer_matches`, `broken_equation_images`, `broken_other_images`, `raw_mathml_visible`, `raw_entities_visible`, `explanation_present`, `missing_alt_images`, `console_errors`, `other_issues`, `notes`
+
+## DOI finder — `npm run find-dois`
+
+Scans the full production DOI catalogue and matches page text against a list of review questions to find the correct DOI for each.
+
+### Input files (in `Data/Questions DOI extract/`)
+
+| File | Purpose |
+|------|---------|
+| `mapped-question-doi.csv` | Review questions that need a DOI (`question_no`, `question_stem`, `doi`). Leave `doi` blank for questions to match; pre-fill it to skip them. |
+| `NAPLEX only production_reporting dim_item 2026-05-27T1520.csv` | Full production DOI list to scan (4 600+ DOIs). |
+
+### How to run
+
+```bat
+open-edge.bat 3        :: open N Edge windows and log in (first run only)
+```
+
+Set `BROWSERS=3` and `CONCURRENCY=20` (or higher) in `.env`, then:
+
+```bash
+npm run find-dois
+```
+
+The script visits every DOI page and compares the rendered question stem against each review question using a Dice-coefficient similarity (threshold 50%). Matches are printed as they are found.
+
+### Resume support
+
+Progress is checkpointed every 50 pages to `output/doi-scan-checkpoint.json`. If the run is interrupted, re-run `npm run find-dois` and it picks up from where it left off. Delete the checkpoint file before starting a brand-new full scan.
+
+### Output
+
+`output/may-2026-review-questions-with-dois.csv` — columns: `question_no`, `question_stem`, `doi`, `match_score`.
+
+Successive runs accumulate candidates (existing rows are not overwritten). Pick the highest-scoring match per question.
 
 ## Debugging
 
