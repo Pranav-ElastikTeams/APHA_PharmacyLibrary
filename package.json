@@ -4,7 +4,8 @@
   "description": "QA automation script for NAPLEX question pages on staging.pharmacylibrary.com",
   "scripts": {
     "check": "tsx src/qa-check.ts",
-"find-dois": "tsx src/find-dois.ts"
+    "find-dois": "tsx src/find-dois.ts",
+    "deposit": "tsx src/deposit.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

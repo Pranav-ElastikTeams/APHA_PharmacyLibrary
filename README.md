@@ -136,6 +136,60 @@ Progress is checkpointed every 50 pages to `output/doi-scan-checkpoint.json`. If
 
 Successive runs accumulate candidates (existing rows are not overwritten). Pick the highest-scoring match per question.
 
+## Deposit automation — `npm run deposit`
+
+Deposits not-yet-migrated digital objects from the Atypon WAT console (`pharmacylibrary.com/wat`) to Impelsys, driven by the `DOs` tab of `Data/DOIs record/Migration_record.xlsx`. Fully independent of the QA and find-dois scripts; it reuses the **same Edge profile** so the login is shared.
+
+### How it works
+
+For each run it: clicks the **Administration** side-panel button → **Backstage** → selects the environment (**Live**) and publication type (**Digital Object Publications** by default), then for every pending DOI it types the DOI into the **DOI** search box, right-clicks the matching grid row → **Deposit**, ticks **Impelsys Migration Feed**, clicks **Deposit**, clicks the **OK/Yes** confirmation if one appears, waits for the "deposit started" notification, marks the row **Status = `started`** with today's date in the Excel file, closes the notification, waits `DEPOSIT_DELAY_MS`, and moves on.
+
+### Which rows are processed
+
+- A row is **pending** when its `Status from Atypon` column is blank.
+- The `Category` column is filtered by `DEPOSIT_CATEGORY` (`NAPLEX`, `other`, or `all`).
+- Because the Status column is written back as each deposit starts, **re-running resumes automatically** — already-started rows are skipped.
+
+### Run it
+
+```bat
+open-edge.bat 1        :: open Edge (first run: log in to pharmacylibrary.com, then re-run)
+```
+
+Then, with the `DEPOSIT_*` values set in `.env`:
+
+```bash
+npm run deposit
+```
+
+### Key `.env` variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEPOSIT_CATEGORY` | `NAPLEX` | Which `Category` rows to deposit: `NAPLEX` / `other` / `all` |
+| `DEPOSIT_PUBLICATION_TYPE` | `digital` | `digital` = Digital Object Publications, `books` = Books |
+| `DEPOSIT_ENV_OPTION` | `Live` | Environment dropdown option on the Backstage screen |
+| `DEPOSIT_SINGLE_DOI` | _(blank)_ | Deposit exactly one DOI and stop |
+| `DEPOSIT_DELAY_MS` | `5000` | Delay between two deposits |
+| `DEPOSIT_LIMIT` | `0` | Cap the number of deposits this run (`0` = no limit) |
+| `DEPOSIT_DRY_RUN` | `false` | Do everything except the final Deposit/confirm — verifies the flow safely |
+| `DEPOSIT_MARK_ERRORS` | `false` | Write `error: …` to Status on failure so it is skipped next run |
+
+### First-time verification
+
+The Atypon UI is a Vaadin app with heavy shadow DOM; the controls are targeted by their
+accessible role/name (which pierces shadow DOM). Run once with `DEPOSIT_DRY_RUN=true` and
+`DEPOSIT_LIMIT=1` to walk the whole flow up to — but not including — the actual deposit.
+Failures are screenshotted to `output/deposit-screenshots/` and progress is mirrored to
+`output/deposit-progress.json`.
+
+The fixed UI control names/labels (side-panel button, combo-box labels, option text, etc.)
+are **hard-coded** in `src/deposit.ts` (the `UI` object). If the UI ever changes, edit them
+there. To re-pick a locator, set `DEBUG_PAUSE=true` (and optionally `$env:PWDEBUG=1`) to drop
+into the Playwright Inspector right after `/wat` loads.
+
+> Note: saving Status back rewrites the workbook via SheetJS, which preserves all data on both sheets but does not retain cell styling. Keep the file closed while the script runs (an open file in Excel locks writes; the script keeps a JSON checkpoint as backup if that happens).
+
 ## Debugging
 
 Set `HEADLESS=false` in `.env` to watch the browser. Set `DEBUG_PAUSE=true` to open Playwright Inspector before the sweep starts.
