@@ -5,7 +5,9 @@
   "scripts": {
     "check": "tsx src/qa-check.ts",
     "find-dois": "tsx src/find-dois.ts",
-    "deposit": "tsx src/deposit.ts"
+    "scrape-questions": "tsx src/scrape-questions.ts",
+    "deposit": "tsx src/deposit.ts",
+    "edge": "open-edge.bat"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
