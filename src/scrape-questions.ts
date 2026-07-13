@@ -1,3 +1,17 @@
+/**
+ * scrape-questions.ts — Grab the live question text for each DOI in the production list.
+ *
+ * In short: the production CSV has a column of DOIs. This script opens each DOI's page
+ * on pharmacylibrary.com, reads the question text, and fills it into a `question_text`
+ * column next to the DOI. The DOI column and row order are never changed — it only
+ * READS the DOIs and ADDS the question text (writes back in place by default).
+ *
+ * Reads : the production DOI CSV (also used as the row template on write).
+ * Writes: the same CSV with a question_text column (or SCRAPE_OUTPUT for a copy).
+ * Resumes from output/scrape-questions-checkpoint.json and skips rows already filled.
+ * Runs many browser tabs in parallel (CDP or launched Chromium) for speed.
+ */
+
 import * as dotenv from 'dotenv';
 import * as fs     from 'fs';
 import * as path   from 'path';

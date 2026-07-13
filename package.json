@@ -6,6 +6,7 @@
     "check": "tsx src/qa-check.ts",
     "find-dois": "tsx src/find-dois.ts",
     "scrape-questions": "tsx src/scrape-questions.ts",
+    "scrape-books": "tsx src/scrape-books.ts",
     "deposit": "tsx src/deposit.ts",
     "edge": "open-edge.bat"
   },

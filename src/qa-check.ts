@@ -1,3 +1,16 @@
+/**
+ * qa-check.ts — Automated QA sweep of the published NAPLEX questions on the site.
+ *
+ * In short: for every question DOI, open its page on staging.pharmacylibrary.com and
+ * check that it looks right — question text is present, the reveal button works, the
+ * shown answer matches the answer from the source Excel, the explanation exists, and
+ * there are no broken equation images, raw MathML/HTML entities, or console errors.
+ *
+ * Reads : the DOI list Excel + the QA Excel (expected answers), joined by S.No.
+ * Writes: output/qna_qa_report.csv (one row per page) + screenshots/ for any page
+ *         that has issues. Prints a summary of all problems found at the end.
+ */
+
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';

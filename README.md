@@ -190,6 +190,73 @@ into the Playwright Inspector right after `/wat` loads.
 
 > Note: saving Status back rewrites the workbook via SheetJS, which preserves all data on both sheets but does not retain cell styling. Keep the file closed while the script runs (an open file in Excel locks writes; the script keeps a JSON checkpoint as backup if that happens).
 
+## Book DOI scraper — `npm run scrape-books`
+
+Walks the paginated topic/series listings on `pharmacylibrary.com` (PharmacotherapyFirst, the OTC topics, the technician book series, the media library, and more), reads the DOI + title of every entry, and folds them into the `Books` tab of `Data/DOIs record/Migration_record.xlsx` — **one row per DOI**. A DOI not yet in the tab is appended; a DOI already present just gains the new `Category` in its comma-separated `Category` cell (e.g. `OtcTopic, OtcCases`), so a DOI is never entered twice. Re-running only adds what's new.
+
+### How it works
+
+For each configured source it requests page `0`, `1`, `2`, … via `?startPage=N&pageSize=<size>`, extracts each entry's DOI (from the `.issue-item__doi` link, the title link's `id`, or — on the series/publication pages — the `.meta__title` `/doi/book/…` link) and Name (`.hlFld-Title` / `.meta__title`), and stops when the "Next Page" link disappears, the listing's total-count is reached, or a page renders no entries (with a `BOOK_MAX_PAGES` safety cap).
+
+Dedupe and categories are keyed on the DOI:
+
+- **New DOI** → a new row is written, with `Status from Atypon` and `Date of attempt` left blank (filled later by `npm run deposit`).
+- **Known DOI, new category** → the category is appended to that row's existing `Category` cell.
+- **Known DOI, category already listed** → skipped.
+
+On load the script also **re-cases** any existing `Category` cells to the canonical PascalCase defined in `SOURCES` (e.g. `books` → `Books`, `otcdecisiontrees` → `OtcDecisionTrees`) and saves once if anything changed. Existing rows' DOIs and the `DOs` sheet are otherwise untouched.
+
+### Run it
+
+```bat
+open-edge.bat 1        :: open Edge (first run: log in to pharmacylibrary.com, then re-run)
+```
+
+The topic listings require a logged-in session, so use CDP mode (above) or set `AUTH_METHOD`/`AUTH_*` in `.env` the same way as the other scripts, then:
+
+```bash
+npm run scrape-books
+```
+
+### Choosing which listing to scrape — `BOOK_TYPE`
+
+`BOOK_TYPE` selects the source(s) by their **key** in the `SOURCES` map inside `src/scrape-books.ts` (the listing links + their category tags live there, not in `.env` — add a new listing by adding an entry). Pass one key, a comma-separated list, or `all`/blank for every source.
+
+| `BOOK_TYPE` key | Scrapes | Category tag |
+|-----------------|---------|--------------|
+| `books` | `/action/showPublications` | `Books` |
+| `culturaltoolkit` | `/topic/culturaltoolkit` | `CulturalToolkit` |
+| `technicianseries` | `/series/aphapts` | `TechnicianSeries` |
+| `otctopic` | `/topic/aphaotctopics` | `OtcTopic` |
+| `otccases` | `/topic/aphaotccases` | `OtcCases` |
+| `otcdecisiontrees` | `/topic/aphaotcdecisiontrees` | `OtcDecisionTrees` |
+| `otcfaculty` | `/topic/aphaotcfaculty` | `OtcFaculty` |
+| `pfirstmodules` | `/topic/pfdsc` | `PfirstModules` |
+| `pfirstcases` | `/topic/pfcbl` | `PfirstCases` |
+| `pfirstfaculty` | `/topic/p1faculty` | `PfirstFaculty` |
+| `medialibrary` | `/topic/multimedia` | `MediaLibrary` |
+| `all` _(or blank)_ | every source in the map | respective |
+
+(All URLs are under `https://pharmacylibrary.com`.)
+
+```powershell
+$env:BOOK_TYPE="otctopic";        npm run scrape-books   :: one source
+$env:BOOK_TYPE="otctopic,otccases"; npm run scrape-books :: several
+npm run scrape-books                                     :: all (BOOK_TYPE=all / blank)
+```
+
+### Key `.env` variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BOOK_TYPE` | `all` | Which listing(s) to scrape — one or more `SOURCES` keys (comma-separated) or `all` (see table above) |
+| `BOOK_PAGE_SIZE` | `20` | `pageSize` used in the pagination URL |
+| `BOOK_MAX_PAGES` | `1000` | Safety cap on pages walked per source |
+| `BOOK_DELAY_MS` | `800` | Delay between page requests |
+| `BOOK_CONTENT_TIMEOUT` | `20000` | Wait (ms) for the entry list to render per page |
+
+> Note: like the deposit script, appending rewrites the workbook via SheetJS — it preserves all data on both sheets but not cell styling. Keep the file closed in Excel while the script runs.
+
 ## Debugging
 
 Set `HEADLESS=false` in `.env` to watch the browser. Set `DEBUG_PAUSE=true` to open Playwright Inspector before the sweep starts.

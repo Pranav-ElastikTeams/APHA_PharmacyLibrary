@@ -1,3 +1,17 @@
+/**
+ * find-dois.ts — Figure out which DOI belongs to each review question.
+ *
+ * In short: some review questions don't have a DOI yet. This script visits every
+ * candidate DOI page on pharmacylibrary.com, reads the question text off the page,
+ * and fuzzy-matches it against the un-mapped questions. Any page that looks similar
+ * enough (>= 50%) is written out as a suggested DOI for that question.
+ *
+ * Reads : mapped-question-doi.csv (questions) + the production DOI list CSV.
+ * Writes: output/may-2026-review-questions-with-dois.csv (question ↔ DOI candidates).
+ * Resumes from output/doi-scan-checkpoint.json if a previous run was interrupted.
+ * Runs many browser tabs in parallel (CDP or launched Chromium) for speed.
+ */
+
 import * as dotenv from 'dotenv';
 import * as fs     from 'fs';
 import * as path   from 'path';
