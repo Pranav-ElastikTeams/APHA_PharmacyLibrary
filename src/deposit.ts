@@ -60,7 +60,8 @@ const CONFIG = {
   // --- Excel source of truth ---
   xlsxPath: path.resolve(ROOT, envStr('DEPOSIT_RECORD_XLSX', 'Data/DOIs record/Migration_record.xlsx')),
   sheet: envStr('DEPOSIT_SHEET', 'DOs'),
-  // Which Category column values to process: NAPLEX | other | all
+  // Which Category tags to process, comma-separated (e.g. "Books, TechnicianSeries"), or "all".
+  // A row is selected when ANY of its comma-separated Category tags matches ANY listed here.
   category: envStr('DEPOSIT_CATEGORY', 'NAPLEX').toLowerCase(),
   // App publication-type dropdown: "digital" → Digital Object Publication, "books" → Books
   publicationType: envStr('DEPOSIT_PUBLICATION_TYPE', 'digital').toLowerCase(),
@@ -128,6 +129,18 @@ const PROGRESS_FILE = path.join(ROOT, 'output', 'deposit-progress.json');
 const PUBLICATION_LABEL =
   CONFIG.publicationType === 'books' ? UI.publicationLabels.books : UI.publicationLabels.digital;
 
+/** Category tags requested via DEPOSIT_CATEGORY. Empty array means "all". */
+const WANTED_CATEGORIES: string[] =
+  CONFIG.category === 'all'
+    ? []
+    : CONFIG.category
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+/** The sheet each publication type must be driven from — the UI dropdown and the tab must agree. */
+const SHEET_FOR_PUBLICATION: Record<string, string> = { digital: 'DOs', books: 'Books' };
+
 // ---------------------------------------------------------------------------
 // Logging
 // ---------------------------------------------------------------------------
@@ -161,35 +174,95 @@ interface DoiRow {
   category: string;
 }
 
-const COL = { DOI: 0, STATUS: 1, DATE: 2, CATEGORY: 3 } as const;
+/**
+ * Column positions differ per sheet — the Books tab carries an extra "Name" column
+ * that shifts Status/Date/Category one to the right vs. the DOs tab. Resolving them
+ * from the header row keeps both tabs correct (and survives future column additions).
+ */
+interface ColumnMap {
+  doi: number;
+  status: number;
+  date: number;
+  category: number;
+}
+
+const HEADER_PATTERNS: Record<keyof ColumnMap, RegExp> = {
+  doi: /^doi$/,
+  status: /^status\b/,
+  date: /^date\b/,
+  category: /^category$/,
+};
+
+function resolveColumns(header: string[], sheetName: string): ColumnMap {
+  const norm = header.map((h) => String(h ?? '').trim().toLowerCase());
+  const out = {} as ColumnMap;
+  for (const key of Object.keys(HEADER_PATTERNS) as (keyof ColumnMap)[]) {
+    const idx = norm.findIndex((h) => HEADER_PATTERNS[key].test(h));
+    if (idx < 0) {
+      throw new Error(
+        `Sheet "${sheetName}": no column matching ${HEADER_PATTERNS[key]} in header [${header.join(', ')}]`,
+      );
+    }
+    out[key] = idx;
+  }
+  return out;
+}
+
+/** Split a Category cell into its comma-separated tags, e.g. "Books, TechnicianSeries". */
+function categoryTags(cell: string): string[] {
+  return cell
+    .split(',')
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
+}
 
 class RecordStore {
   private wb: XLSX.WorkBook;
   private ws: XLSX.WorkSheet;
+  readonly cols: ColumnMap;
   rows: DoiRow[] = [];
 
-  constructor(private filePath: string, private sheetName: string) {
+  constructor(private filePath: string, sheetName: string) {
     if (!fs.existsSync(filePath)) {
       throw new Error(`Record file not found: ${filePath}`);
     }
     this.wb = XLSX.readFile(filePath, { cellStyles: true });
     const ws = this.wb.Sheets[sheetName];
-    if (!ws) throw new Error(`Sheet "${sheetName}" not found in ${filePath}`);
+    if (!ws) {
+      throw new Error(
+        `Sheet "${sheetName}" not found in ${filePath}. Available: ${this.wb.SheetNames.join(', ')}`,
+      );
+    }
     this.ws = ws;
 
     const grid = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, blankrows: false, defval: '' });
+    if (grid.length === 0) throw new Error(`Sheet "${sheetName}" is empty`);
+    this.cols = resolveColumns(grid[0] ?? [], sheetName);
+
     for (let r = 1; r < grid.length; r++) {
       const row = grid[r];
-      const doi = String(row[COL.DOI] ?? '').trim();
+      const doi = String(row[this.cols.doi] ?? '').trim();
       if (!doi) continue;
       this.rows.push({
         rowIdx: r,
         doi,
-        status: String(row[COL.STATUS] ?? '').trim(),
-        date: String(row[COL.DATE] ?? '').trim(),
-        category: String(row[COL.CATEGORY] ?? '').trim(),
+        status: String(row[this.cols.status] ?? '').trim(),
+        date: String(row[this.cols.date] ?? '').trim(),
+        category: String(row[this.cols.category] ?? '').trim(),
       });
     }
+  }
+
+  /** Data rows whose Category cell carries no tags — these can never be selected by category. */
+  missingCategory(): DoiRow[] {
+    return this.rows.filter((r) => categoryTags(r.category).length === 0);
+  }
+
+  /** Every distinct category tag present in the sheet, for diagnostics. */
+  knownTags(): string[] {
+    const seen = new Set<string>();
+    for (const r of this.rows) for (const t of categoryTags(r.category)) seen.add(t);
+    return [...seen].sort();
   }
 
   findByDoi(doi: string): DoiRow | undefined {
@@ -201,8 +274,8 @@ class RecordStore {
   setStatus(row: DoiRow, status: string, date: string): boolean {
     row.status = status;
     row.date = date;
-    this.setCell(row.rowIdx, COL.STATUS, status);
-    this.setCell(row.rowIdx, COL.DATE, date);
+    this.setCell(row.rowIdx, this.cols.status, status);
+    this.setCell(row.rowIdx, this.cols.date, date);
     return this.save();
   }
 
@@ -411,6 +484,46 @@ class DryRunStop extends Error {
   }
 }
 
+class SessionExpired extends Error {
+  constructor() {
+    super('signed out of pharmacylibrary.com (HTTP 401)');
+    this.name = 'SessionExpired';
+  }
+}
+
+/**
+ * True when the page is Atypon's 401 wall rather than the WAT console.
+ *
+ * Worth checking explicitly: signed out, every locator simply never appears, so the
+ * script would otherwise burn CONFIG.selTimeout per step and report a missing button
+ * instead of the real cause.
+ */
+async function isSignedOut(page: Page): Promise<boolean> {
+  try {
+    if (/\/(showLogin|action\/login)/i.test(page.url())) return true;
+    const body = await page.locator('body').innerText({ timeout: 5000 });
+    // Deliberately narrow: the bare word "unauthorized" shows up in ordinary app copy,
+    // and a false positive here would abort a healthy batch.
+    return /HTTP Status 401\b|\b401\s*[–—-]\s*Unauthorized\b/i.test(body);
+  } catch {
+    return false; // page busy/navigating — treat as "can't tell", not as signed out
+  }
+}
+
+function loginBanner(): void {
+  console.log('\n' + '='.repeat(64));
+  console.log(' SESSION EXPIRED — signed out of pharmacylibrary.com (HTTP 401).');
+  console.log('');
+  console.log(' To fix:');
+  console.log('   1. Switch to the Edge window opened by open-edge.bat.');
+  console.log('   2. Open https://pharmacylibrary.com/wat and log in again.');
+  console.log('   3. Re-run: npm run deposit');
+  console.log('');
+  console.log(' Nothing is lost. DOIs already deposited keep their "started" status and');
+  console.log(' are skipped, so the run resumes exactly where it stopped.');
+  console.log('='.repeat(64) + '\n');
+}
+
 /** Wait for the "deposit started" confirmation notification, then close it. */
 async function awaitStartedAndClose(page: Page): Promise<void> {
   const started = page
@@ -466,8 +579,41 @@ async function main(): Promise<void> {
   log(`Dry run:       ${CONFIG.dryRun}`);
   if (CONFIG.singleDoi) log(`Single DOI:    ${CONFIG.singleDoi}`);
 
+  // The UI publication-type dropdown and the source tab must describe the same content —
+  // depositing DOs DOIs while the console is set to Books (or vice versa) is always a mistake.
+  const expectedSheet = SHEET_FOR_PUBLICATION[CONFIG.publicationType];
+  if (expectedSheet && CONFIG.sheet.toLowerCase() !== expectedSheet.toLowerCase()) {
+    throw new Error(
+      `DEPOSIT_PUBLICATION_TYPE="${CONFIG.publicationType}" (${PUBLICATION_LABEL}) expects DEPOSIT_SHEET="${expectedSheet}", ` +
+        `but DEPOSIT_SHEET="${CONFIG.sheet}". Fix .env so the tab and the dropdown agree.`,
+    );
+  }
+
   const store = new RecordStore(CONFIG.xlsxPath, CONFIG.sheet);
   const progress = loadProgress();
+
+  const colLetter = (c: number) => XLSX.utils.encode_col(c);
+  log(
+    `Columns:       DOI=${colLetter(store.cols.doi)} Status=${colLetter(store.cols.status)} ` +
+      `Date=${colLetter(store.cols.date)} Category=${colLetter(store.cols.category)}`,
+  );
+
+  // Surface data/config problems before touching the browser.
+  const uncategorised = store.missingCategory();
+  if (uncategorised.length > 0) {
+    warn(
+      `${uncategorised.length} row(s) in "${CONFIG.sheet}" have a blank Category and can only be reached with DEPOSIT_CATEGORY=all ` +
+        `(e.g. row ${uncategorised[0].rowIdx + 1}: ${uncategorised[0].doi})`,
+    );
+  }
+  const known = store.knownTags();
+  const unknown = WANTED_CATEGORIES.filter((c) => !known.includes(c));
+  if (unknown.length > 0) {
+    throw new Error(
+      `DEPOSIT_CATEGORY contains tag(s) not present in "${CONFIG.sheet}": ${unknown.join(', ')}. ` +
+        `Known tags: ${known.join(', ')}`,
+    );
+  }
 
   // Build the work list.
   let work: DoiRow[];
@@ -478,7 +624,10 @@ async function main(): Promise<void> {
     work = store.rows.filter((r) => {
       if (r.status) return false; // already migrated / attempted
       if (progress.completed[r.doi]) return false; // checkpoint says done (Excel was locked earlier)
-      if (CONFIG.category !== 'all' && r.category.toLowerCase() !== CONFIG.category) return false;
+      if (WANTED_CATEGORIES.length > 0) {
+        const tags = categoryTags(r.category);
+        if (!tags.some((t) => WANTED_CATEGORIES.includes(t))) return false;
+      }
       return true;
     });
     if (CONFIG.limit > 0) work = work.slice(0, CONFIG.limit);
@@ -497,12 +646,15 @@ async function main(): Promise<void> {
 
   let started = 0;
   let failed = 0;
+  let sessionLost = false;
 
   try {
     // --- One-time app setup ---
     log(`Navigating to ${WAT_URL}`);
-    await page.goto(WAT_URL, { waitUntil: 'domcontentloaded', timeout: CONFIG.navTimeout });
+    const resp = await page.goto(WAT_URL, { waitUntil: 'domcontentloaded', timeout: CONFIG.navTimeout });
     await settle(page, 1500);
+
+    if (resp?.status() === 401 || (await isSignedOut(page))) throw new SessionExpired();
 
     if (CONFIG.debugPause) {
       console.log('\n' + '-'.repeat(64));
@@ -541,6 +693,14 @@ async function main(): Promise<void> {
           log(`${tag} dry-run reached the Deposit button successfully — stopping (no actual deposit).`);
           break;
         }
+        // A session that dies mid-run fails every remaining DOI identically. Marking them
+        // all "error" would poison rows that were never really attempted, and the resume
+        // filter would then skip them for good. Stop instead, leaving this DOI untouched.
+        if (await isSignedOut(page)) {
+          sessionLost = true;
+          warn(`${tag} session expired at ${row.doi} — stopping. This DOI is left blank and will be retried.`);
+          break;
+        }
         failed++;
         const reason = (err as Error).message ?? String(err);
         warn(`${tag} FAILED ${row.doi}: ${reason}`);
@@ -566,9 +726,18 @@ async function main(): Promise<void> {
   console.log('='.repeat(64));
   log(`Done. Started: ${started}  Failed: ${failed}  Total attempted: ${started + failed}`);
   if (failed > 0) log(`Failures logged to ${PROGRESS_FILE} and screenshots in ${SHOT_DIR}`);
+  if (sessionLost) {
+    log(`${work.length - started - failed} DOI(s) of this batch were not attempted.`);
+    loginBanner();
+    process.exit(2);
+  }
 }
 
 main().catch((err) => {
+  if (err instanceof SessionExpired) {
+    loginBanner();
+    process.exit(2);
+  }
   console.error('[Fatal]', err);
   process.exit(1);
 });
